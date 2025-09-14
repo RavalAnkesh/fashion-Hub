@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { assets } from '../assets/assets';
-import axios from 'axios';
-import { backendUrl } from '../App';
-import { toast } from 'react-toastify';
+import React, { useState } from "react";
+import { assets } from "../assets/assets";
+import axios from "axios";
+import { backendUrl } from "../App";
+import { toast } from "react-toastify";
 
 const Add = ({ token }) => {
   const [image1, setImage1] = useState(false);
@@ -13,40 +13,48 @@ const Add = ({ token }) => {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [category, setCategory] = useState("Men");
-  const [subCategory, setSubCategory] = useState("Topwear");
+  const [category, setCategory] = useState("");
+  const [subCategory, setSubCategory] = useState("");
+  const [color, setColor] = useState("");
   const [bestseller, setBestseller] = useState(false);
   const [sizes, setSizes] = useState([]);
 
   const [loadingAI, setLoadingAI] = useState(false);
+  const [aiError, setAiError] = useState("");
+
+  const toggleSize = (s) => {
+    setSizes(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
+  };
 
   const handleImageSelect = async (e) => {
     const file = e.target.files[0];
     setImage1(file);
     if (!file) return;
 
-    try {
-      setLoadingAI(true);
-      console.log("📤 Uploading image to AI route:", file.name);
+    setAiError("");
+    setLoadingAI(true);
 
+    try {
       const formData = new FormData();
       formData.append("image", file);
 
       const res = await axios.post(`${backendUrl}/api/product/ai-classify`, formData, {
-        headers: { token }
+        headers: { token },
       });
 
-      console.log("✅ AI Response:", res.data);
-
       if (res.data.success) {
-        const { predictedCategory, predictedSubCategory } = res.data;
+        const { predictedCategory, predictedSubCategory, color } = res.data;
         toast.info(`AI Suggestion: ${predictedCategory} → ${predictedSubCategory}`);
         setCategory(predictedCategory);
         setSubCategory(predictedSubCategory);
+        setColor(color);
+      } else {
+        setAiError("AI detection failed: No suggestions available");
       }
     } catch (err) {
-      console.error("❌ AI Request Failed:", err);
-      toast.error("AI category suggestion failed.");
+      console.error(err);
+      setAiError("AI detection failed. Please try again.");
+      toast.error("AI detection failed.");
     } finally {
       setLoadingAI(false);
     }
@@ -55,10 +63,7 @@ const Add = ({ token }) => {
   const onSubmitHandler = async (e) => {
     e.preventDefault();
 
-    if (!description) {
-      toast.error("Description is required!");
-      return;
-    }
+    if (!description) return toast.error("Description is required!");
 
     try {
       const formData = new FormData();
@@ -67,6 +72,7 @@ const Add = ({ token }) => {
       formData.append("price", price);
       formData.append("category", category);
       formData.append("subCategory", subCategory);
+      formData.append("color", color);
       formData.append("bestseller", bestseller);
       formData.append("sizes", JSON.stringify(sizes));
 
@@ -76,54 +82,155 @@ const Add = ({ token }) => {
       image4 && formData.append("image4", image4);
 
       const response = await axios.post(`${backendUrl}/api/product/add`, formData, {
-        headers: { token }
+        headers: { token },
       });
 
       if (response.data.success) {
         toast.success(response.data.message);
-        setName('');
-        setDescription('');
-        setImage1(false);
-        setImage2(false);
-        setImage3(false);
-        setImage4(false);
-        setPrice('');
-      } else {
-        toast.error(response.data.message);
-      }
-    } catch (error) {
-      console.error(error);
-      toast.error(error.message);
+        setName(""); setDescription(""); setPrice("");
+        setCategory(""); setSubCategory(""); setColor("");
+        setImage1(false); setImage2(false); setImage3(false); setImage4(false);
+        setSizes([]); setBestseller(false); setAiError("");
+      } else toast.error(response.data.message);
+    } catch (err) {
+      console.error(err);
+      toast.error(err.message);
     }
   };
 
   return (
     <form onSubmit={onSubmitHandler} className="flex flex-col w-full items-start gap-3">
+      {/* Image Upload */}
       <div>
         <p className="mb-2">Upload Image</p>
         <div className="flex gap-2">
-          <label htmlFor="image1">
-            <img className="w-20" src={!image1 ? assets.upload_area : URL.createObjectURL(image1)} alt="" />
-            <input onChange={handleImageSelect} type="file" id="image1" hidden />
-          </label>
-          <label htmlFor="image2">
-            <img className="w-20" src={!image2 ? assets.upload_area : URL.createObjectURL(image2)} alt="" />
-            <input onChange={(e) => setImage2(e.target.files[0])} type="file" id="image2" hidden />
-          </label>
-          <label htmlFor="image3">
-            <img className="w-20" src={!image3 ? assets.upload_area : URL.createObjectURL(image3)} alt="" />
-            <input onChange={(e) => setImage3(e.target.files[0])} type="file" id="image3" hidden />
-          </label>
-          <label htmlFor="image4">
-            <img className="w-20" src={!image4 ? assets.upload_area : URL.createObjectURL(image4)} alt="" />
-            <input onChange={(e) => setImage4(e.target.files[0])} type="file" id="image4" hidden />
-          </label>
+          {[image1, image2, image3, image4].map((img, idx) => (
+            <label key={idx} htmlFor={`image${idx+1}`}>
+              <img
+                className="w-20 h-20 object-cover"
+                src={!img ? assets.upload_area : URL.createObjectURL(img)}
+                alt=""
+              />
+              <input
+                type="file"
+                id={`image${idx+1}`}
+                hidden
+                onChange={idx === 0 ? handleImageSelect : (e) => {
+                  if(idx===1) setImage2(e.target.files[0]);
+                  if(idx===2) setImage3(e.target.files[0]);
+                  if(idx===3) setImage4(e.target.files[0]);
+                }}
+              />
+            </label>
+          ))}
         </div>
         {loadingAI && <p className="text-sm text-gray-500 mt-2">Detecting category...</p>}
+        {aiError && <p className="text-sm text-red-500 mt-2">{aiError}</p>}
+        {color && (
+          <p className="text-sm mt-1 flex items-center">
+            Detected Color: 
+            <span
+              className="inline-block w-5 h-5 ml-2 rounded border"
+              style={{ backgroundColor: color }}
+            />
+            <span className="ml-1">{color}</span>
+          </p>
+        )}
       </div>
 
-      {/* Rest of your form (name, description, price, category dropdown, etc.) */}
+      {/* Product Details */}
+      <div className="w-full">
+        <p className="mb-2">Product name</p>
+        <input
+          value={name}
+          onChange={e => setName(e.target.value)}
+          className="w-full max-w-[500px] px-3 py-2"
+          type="text"
+          placeholder="Type here"
+          required
+        />
+      </div>
+      <div className="w-full">
+        <p className="mb-2">Product description</p>
+        <textarea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          className="w-full max-w-[500px] px-3 py-2"
+          placeholder="Write content here"
+          required
+        />
+      </div>
 
+      {/* Category / SubCategory / Price */}
+      <div className="flex flex-col sm:flex-row gap-2 w-full sm:gap-8">
+        <div>
+          <p className="mb-2">Product category</p>
+          <select
+            value={category}
+            onChange={e => setCategory(e.target.value)}
+            className="w-full px-3 py-2"
+          >
+            <option value="">Select category</option>
+            <option value="Men">Men</option>
+            <option value="Women">Women</option>
+            <option value="Kids">Kids</option>
+          </select>
+        </div>
+        <div>
+          <p className="mb-2">Sub category</p>
+          <select
+            value={subCategory}
+            onChange={e => setSubCategory(e.target.value)}
+            className="w-full px-3 py-2"
+          >
+            <option value="">Select subcategory</option>
+            <option value="Topwear">Topwear</option>
+            <option value="Bottomwear">Bottomwear</option>
+          </select>
+        </div>
+        <div>
+          <p className="mb-2">Product Price</p>
+          <input
+            value={price}
+            onChange={e => setPrice(e.target.value)}
+            className="w-full px-3 py-2 sm:w-[120px]"
+            type="number"
+            placeholder="25"
+            required
+          />
+        </div>
+      </div>
+
+      {/* Sizes */}
+      <div>
+        <p className="mb-2">Product Sizes</p>
+        <div className="flex gap-3">
+          {["S", "M", "L", "XL", "XXL"].map((s) => (
+            <div key={s} onClick={() => toggleSize(s)}>
+              <p
+                className={`${sizes.includes(s) ? "bg-pink-100" : "bg-slate-200"} px-3 py-1 cursor-pointer`}
+              >
+                {s}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Bestseller */}
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          id="bestseller"
+          checked={bestseller}
+          onChange={() => setBestseller(prev => !prev)}
+        />
+        <label className="cursor-pointer" htmlFor="bestseller">
+          Add to bestseller
+        </label>
+      </div>
+
+      {/* Submit Button */}
       <button type="submit" className="w-28 py-3 mt-4 bg-black text-white">
         ADD
       </button>

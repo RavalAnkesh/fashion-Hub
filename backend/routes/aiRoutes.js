@@ -1,51 +1,64 @@
 import express from "express";
 import multer from "multer";
-import * as tf from "@tensorflow/tfjs";
+import * as tf from "@tensorflow/tfjs-node";
 import * as mobilenet from "@tensorflow-models/mobilenet";
-import '@tensorflow/tfjs-backend-cpu'; // CPU backend for Node
-
-import fs from "fs";
-import { Image, createCanvas, loadImage } from "canvas"; // needed for Node image decoding
+import sharp from "sharp";
 
 const router = express.Router();
 const upload = multer();
 
-// Load MobileNet
+// Load MobileNet model on server start
 let model;
 (async () => {
-  await tf.setBackend('cpu');
   model = await mobilenet.load();
-  console.log("✅ AI Model Loaded (CPU backend)");
+  console.log("✅ AI Model Loaded (Node backend)");
 })();
 
 // Category mapping
 const categoryMap = [
-  { keywords: ["t-shirt", "shirt", "hoodie", "jacket"], category: "Men", subCategory: "Topwear" },
-  { keywords: ["pant", "jean", "trouser"], category: "Men", subCategory: "Bottomwear" },
-  { keywords: ["kurta", "dress", "saree"], category: "Women", subCategory: "Ethnicwear" },
-  { keywords: ["shoe", "sneaker", "boot"], category: "Men", subCategory: "Footwear" },
-  { keywords: ["kid"], category: "Kids", subCategory: "Topwear" },
+  { keywords: ["t-shirt","shirt","hoodie","jacket","top","sweatshirt"], category: "Men", subCategory: "Topwear" },
+  { keywords: ["pant","jean","trouser","short"], category: "Men", subCategory: "Bottomwear" },
+  { keywords: ["blouse","kurta","dress","top"], category: "Women", subCategory: "Topwear" },
+  { keywords: ["skirt","legging","jean"], category: "Women", subCategory: "Bottomwear" },
+  { keywords: ["kid","child","t-shirt"], category: "Kids", subCategory: "Topwear" },
+  { keywords: ["kid","child","pant"], category: "Kids", subCategory: "Bottomwear" },
 ];
 
-// Decode image using canvas
-async function decodeImage(buffer) {
-  const img = await loadImage(buffer);
-  const canvas = createCanvas(img.width, img.height);
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(img, 0, 0);
-  return tf.browser.fromPixels(canvas);
+// Dominant color detection using Sharp
+async function getDominantColor(buffer) {
+  const { data, info } = await sharp(buffer)
+    .resize(50, 50) // small image for faster processing
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  let r = 0, g = 0, b = 0;
+  const pixelCount = info.width * info.height;
+
+  for (let i = 0; i < data.length; i += info.channels) {
+    r += data[i];
+    g += data[i + 1];
+    b += data[i + 2];
+  }
+
+  r = Math.round(r / pixelCount);
+  g = Math.round(g / pixelCount);
+  b = Math.round(b / pixelCount);
+
+  return `rgb(${r},${g},${b})`;
 }
 
+// AI classify route
 router.post("/ai-classify", upload.single("image"), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: "No image uploaded" });
-    if (!model) return res.status(500).json({ success: false, message: "AI model not ready yet" });
+    if (!model) return res.status(500).json({ success: false, message: "AI model not ready" });
 
-    const tensor = await decodeImage(req.file.buffer);
+    // Decode image for TensorFlow
+    const tensor = tf.node.decodeImage(req.file.buffer);
     const predictions = await model.classify(tensor);
     const topPrediction = predictions[0]?.className || "unknown";
 
-    // Map prediction to category
+    // Map to category / subcategory
     let predictedCategory = "Men";
     let predictedSubCategory = "Topwear";
     const lower = topPrediction.toLowerCase();
@@ -57,12 +70,19 @@ router.post("/ai-classify", upload.single("image"), async (req, res) => {
       }
     }
 
-    console.log("🔎 AI Prediction:", topPrediction);
-    res.json({ success: true, predictedCategory, predictedSubCategory, rawPrediction: topPrediction });
+    // Get dominant color
+    const color = await getDominantColor(req.file.buffer);
 
+    res.json({
+      success: true,
+      predictedCategory,
+      predictedSubCategory,
+      color,
+      rawPrediction: topPrediction
+    });
   } catch (err) {
     console.error("❌ AI Error:", err);
-    res.status(500).json({ success: false, message: "AI category suggestion failed" });
+    res.status(500).json({ success: false, message: "AI detection failed" });
   }
 });
 
