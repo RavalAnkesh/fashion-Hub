@@ -10,7 +10,7 @@ A modern web platform for fashion showcases / online store / catalogue (customiz
 
 ## About
 
-**Fashion-Hub** is a full-stack fashion application comprised of frontend and backend services. It aims to provide a platform where users can browse fashion items, possibly add to cart, and manage products (admin).
+**Fashion-Hub** is a full-stack fashion application comprised of frontend and backend services. It aims to provide a platform where users can browse fashion items, possibly add to cart, and manage products (admin) and also suggest the product category and color using AI.
 
 ---
 
